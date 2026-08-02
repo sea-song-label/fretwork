@@ -259,6 +259,47 @@
   #habitEscape { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); display: none; }
   #habitEscape h3 { font-size: 12px; color: var(--accent-dim); letter-spacing: 0.12em; margin: 0 0 8px; }
   .escape-note { font-size: 12px; color: var(--text-dim); line-height: 1.7; margin-bottom: 10px; }
+
+  /* 指板の入力 */
+  #fretboard { overflow-x: auto; padding-bottom: 4px; }
+  .fb-grid { display: inline-block; min-width: 100%; }
+  .fb-row { display: flex; align-items: center; height: 34px; }
+  .fb-name { width: 34px; flex-shrink: 0; font-size: 11px; color: var(--text-dim); text-align: center; }
+  .fb-mute {
+    width: 26px; flex-shrink: 0; text-align: center; font-size: 13px; cursor: pointer;
+    color: var(--text-dim); border-radius: 4px;
+  }
+  .fb-mute.on { background: var(--panel2); color: var(--wrong); font-weight: 700; }
+  .fb-cell {
+    width: 34px; flex-shrink: 0; height: 28px; cursor: pointer; position: relative;
+    display: flex; align-items: center; justify-content: center;
+    border-left: 1px solid var(--border);
+  }
+  .fb-cell::before {
+    content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 1px;
+    background: var(--border);
+  }
+  .fb-cell.on { }
+  .fb-dot {
+    width: 22px; height: 22px; border-radius: 50%; background: var(--accent);
+    color: #16202a; font-size: 11px; font-weight: 700; display: flex;
+    align-items: center; justify-content: center; position: relative; z-index: 1;
+  }
+  .fb-head { display: flex; align-items: center; height: 20px; }
+  .fb-head .fb-name, .fb-head .fb-mute { font-size: 10px; }
+  .fb-head .fb-cell { border: none; height: 20px; font-size: 10px; color: var(--text-dim); }
+  .fb-head .fb-cell::before { display: none; }
+
+  .chord-card {
+    background: var(--panel2); border-radius: 8px; padding: 12px 14px; margin-top: 10px;
+    border-left: 3px solid var(--accent-dim);
+  }
+  .chord-card.exact { border-left-color: var(--accent); }
+  .chord-name { font-size: 20px; font-weight: 700; color: var(--accent); }
+  .chord-name .sub { font-size: 12px; color: var(--text-dim); font-weight: 400; margin-left: 8px; }
+  .chord-why { font-size: 12px; color: var(--text-dim); line-height: 1.7; margin-top: 6px; }
+  .chord-why b { color: var(--text); font-weight: 600; }
+  .chord-none { font-size: 12.5px; color: var(--text-dim); line-height: 1.7; margin-top: 10px; }
 </style>
 </head>
 <body>
@@ -344,6 +385,23 @@
     <h2>タブ譜</h2>
     <div id="nowPlaying"><span id="nowIdle">再生すると、ここに今弾く音が大きく出ます</span></div>
     <div id="tabScroll"><div id="tabInner"><div class="empty-hint">プリセットを選ぶか、パターンを生成してください</div></div></div>
+  </div>
+
+  <div class="panel" id="chordPanel">
+    <h2>このコードなに?</h2>
+    <p class="habit-lead">
+      いま押さえている形を指板に打ち込むと、<strong>そう読めるコードを全部</strong>、理由つきで出します。
+      どれを採るかは決めません。決めるのはRさんです。
+    </p>
+    <div class="row" style="margin-bottom:10px;">
+      <div class="field"><label>カポ</label>
+        <select id="capoSel"></select>
+      </div>
+      <button id="chordClearBtn" style="align-self:flex-end;">全部はずす</button>
+      <span id="chordNotes" class="habit-count"></span>
+    </div>
+    <div id="fretboard"></div>
+    <div id="chordResult"></div>
   </div>
 
   <div class="panel" id="habitPanel">
@@ -1141,6 +1199,173 @@ document.getElementById('habitClearBtn').addEventListener('click', () => {
 loadHabit();
 updateHabitCount();
 renderHabit();
+
+/* ══════════════════════════════════════════════════════════════
+   このコードなに?
+
+   設計（2026-07-27 Rさん確定）：
+   ・すべてプログラムによる確定計算のみ。AIに推測させる部分をゼロにする
+   ・出すのは「そう読めるコード候補の一覧＋なぜそう読めるかの理由」まで
+   ・どれを採るかはユーザーが決める。アプリは決めない
+   ・カポ対応は中核機能（カポ3のCコード＝実音E♭問題が原点）
+   ══════════════════════════════════════════════════════════════ */
+
+const FB_FRETS = 15;
+const CHORD_TYPES = [
+  { n: '5',      iv: [0, 7],            deg: ['1', '5'] },
+  { n: 'sus2',   iv: [0, 2, 7],         deg: ['1', '2', '5'] },
+  { n: '',       iv: [0, 4, 7],         deg: ['1', '3', '5'] },
+  { n: 'm',      iv: [0, 3, 7],         deg: ['1', '♭3', '5'] },
+  { n: 'sus4',   iv: [0, 5, 7],         deg: ['1', '4', '5'] },
+  { n: 'dim',    iv: [0, 3, 6],         deg: ['1', '♭3', '♭5'] },
+  { n: 'aug',    iv: [0, 4, 8],         deg: ['1', '3', '♯5'] },
+  { n: '6',      iv: [0, 4, 7, 9],      deg: ['1', '3', '5', '6'] },
+  { n: 'm6',     iv: [0, 3, 7, 9],      deg: ['1', '♭3', '5', '6'] },
+  { n: '7',      iv: [0, 4, 7, 10],     deg: ['1', '3', '5', '♭7'] },
+  { n: 'maj7',   iv: [0, 4, 7, 11],     deg: ['1', '3', '5', '7'] },
+  { n: 'm7',     iv: [0, 3, 7, 10],     deg: ['1', '♭3', '5', '♭7'] },
+  { n: 'mMaj7',  iv: [0, 3, 7, 11],     deg: ['1', '♭3', '5', '7'] },
+  { n: 'm7♭5',   iv: [0, 3, 6, 10],     deg: ['1', '♭3', '♭5', '♭7'] },
+  { n: 'dim7',   iv: [0, 3, 6, 9],      deg: ['1', '♭3', '♭5', '♭♭7'] },
+  { n: 'add9',   iv: [0, 2, 4, 7],      deg: ['1', '9', '3', '5'] },
+  { n: 'madd9',  iv: [0, 2, 3, 7],      deg: ['1', '9', '♭3', '5'] },
+  { n: '7sus4',  iv: [0, 5, 7, 10],     deg: ['1', '4', '5', '♭7'] },
+  { n: '9',      iv: [0, 2, 4, 7, 10],  deg: ['1', '9', '3', '5', '♭7'] },
+  { n: 'maj9',   iv: [0, 2, 4, 7, 11],  deg: ['1', '9', '3', '5', '7'] },
+  { n: 'm9',     iv: [0, 2, 3, 7, 10],  deg: ['1', '9', '♭3', '5', '♭7'] },
+  { n: '69',     iv: [0, 2, 4, 7, 9],   deg: ['1', '9', '3', '5', '6'] },
+];
+
+// 各弦の押さえ位置。null=ミュート、数値=フレット（0=開放）
+let fbState = [null, null, null, null, null, null]; // index 0 = 1弦
+let capo = 0;
+
+function fbSounding() {
+  const out = [];
+  for (let i = 0; i < 6; i++) {
+    if (fbState[i] === null) continue;
+    const str = i + 1;
+    out.push({ string: str, fret: fbState[i], midi: STRING_OPEN_MIDI[str] + capo + fbState[i] });
+  }
+  return out.sort((a, b) => a.midi - b.midi);
+}
+
+function identifyChords() {
+  const notes = fbSounding();
+  if (notes.length < 2) return { notes, results: [] };
+  const pcs = [...new Set(notes.map(n => ((n.midi % 12) + 12) % 12))].sort((a, b) => a - b);
+  const bassPc = ((notes[0].midi % 12) + 12) % 12;
+  const results = [];
+
+  for (const root of pcs) {
+    for (const t of CHORD_TYPES) {
+      const need = t.iv.map(v => (root + v) % 12);
+      const has = need.filter(p => pcs.includes(p));
+      const extra = pcs.filter(p => !need.includes(p));
+      if (extra.length > 0) continue;              // 鳴っていない音を勝手に足さない
+      const missing = need.filter(p => !pcs.includes(p));
+      // 5度の省略だけは許容（ギターでは日常的）。それ以外の欠けは候補にしない
+      if (missing.length > 1) continue;
+      if (missing.length === 1 && (missing[0] - root + 12) % 12 !== 7) continue;
+      if (has.length < 2) continue;
+
+      const name = NOTE_NAMES[root] + t.n;
+      const slash = bassPc !== root ? '/' + NOTE_NAMES[bassPc] : '';
+      const degText = t.iv.map((v, i) => {
+        const p = (root + v) % 12;
+        return pcs.includes(p) ? `${NOTE_NAMES[p]}=${t.deg[i]}` : null;
+      }).filter(Boolean).join('・');
+
+      results.push({
+        name: name + slash,
+        exact: missing.length === 0 && bassPc === root,
+        missing: missing.length ? '5度' : null,
+        inversion: bassPc !== root,
+        bass: NOTE_NAMES[bassPc],
+        degText,
+        score: (missing.length === 0 ? 0 : 1) + (bassPc === root ? 0 : 1) + t.iv.length * -0.01,
+      });
+    }
+  }
+  results.sort((a, b) => a.score - b.score);
+  return { notes, pcs, results };
+}
+
+function renderFretboard() {
+  const fb = document.getElementById('fretboard');
+  let html = '<div class="fb-grid">';
+  html += '<div class="fb-head"><div class="fb-name"></div><div class="fb-mute"></div>';
+  for (let f = 0; f <= FB_FRETS; f++) html += `<div class="fb-cell">${f === 0 ? '開' : f}</div>`;
+  html += '</div>';
+  for (let s = 1; s <= 6; s++) {
+    const i = s - 1;
+    html += `<div class="fb-row"><div class="fb-name">${s}弦</div>` +
+      `<div class="fb-mute ${fbState[i] === null ? 'on' : ''}" data-mute="${i}">✕</div>`;
+    for (let f = 0; f <= FB_FRETS; f++) {
+      const on = fbState[i] === f;
+      html += `<div class="fb-cell" data-s="${i}" data-f="${f}">${on ? `<div class="fb-dot">${f}</div>` : ''}</div>`;
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  fb.innerHTML = html;
+}
+
+function renderChord() {
+  const { notes, results } = identifyChords();
+  const cnt = document.getElementById('chordNotes');
+  const box = document.getElementById('chordResult');
+  cnt.textContent = notes.length
+    ? `鳴っている音：${notes.map(n => midiName(n.midi)).join(' ')}${capo ? `（カポ${capo}の実音）` : ''}`
+    : '指板を押してください';
+
+  if (notes.length < 2) { box.innerHTML = ''; return; }
+  if (!results.length) {
+    box.innerHTML = `<div class="chord-none">この音の組み合わせに当てはまる名前は、用意した型の中にはありませんでした。` +
+      `構成音は <b>${[...new Set(notes.map(n => NOTE_NAMES[((n.midi % 12) + 12) % 12]))].join('・')}</b> です。` +
+      `名前が付かないことは間違いではありません（テンションの多い響きや、意図的な不協和ではよくあります）。</div>`;
+    return;
+  }
+  box.innerHTML = results.slice(0, 6).map(r => {
+    const notesList = [];
+    // ♯で書いた音は♭でも呼ばれる。カポを使うと♭側で考える場面が多いため併記する
+    const FLATS = { 'C#': 'D♭', 'D#': 'E♭', 'F#': 'G♭', 'G#': 'A♭', 'A#': 'B♭' };
+    const enh = Object.keys(FLATS).filter(s => r.name.startsWith(s));
+    if (enh.length) notesList.push(`${enh[0]} は ${FLATS[enh[0]]} と同じ音です`);
+    if (r.missing) notesList.push(`${r.missing}が省略されています（ギターでは普通のことです）`);
+    if (r.inversion) notesList.push(`一番低い音が ${r.bass} なので転回形（分数コード）として書いています`);
+    return `<div class="chord-card ${r.exact ? 'exact' : ''}">` +
+      `<div class="chord-name">${r.name}${r.exact ? '<span class="sub">ぴったり一致</span>' : ''}</div>` +
+      `<div class="chord-why"><b>${r.degText}</b>${notesList.length ? '<br>' + notesList.join('。') + '。' : ''}</div>` +
+      `</div>`;
+  }).join('') +
+  (results.length > 1 ? `<div class="chord-none">${results.length}通りの読み方があります。` +
+    `どれが正しいということはなく、前後の流れの中でRさんが選ぶものです。</div>` : '');
+}
+
+document.getElementById('fretboard').addEventListener('click', e => {
+  const mute = e.target.closest('[data-mute]');
+  if (mute) { fbState[+mute.dataset.mute] = null; renderFretboard(); renderChord(); return; }
+  const cell = e.target.closest('[data-s]');
+  if (!cell) return;
+  const i = +cell.dataset.s, f = +cell.dataset.f;
+  fbState[i] = (fbState[i] === f) ? null : f;
+  renderFretboard();
+  renderChord();
+});
+
+document.getElementById('chordClearBtn').addEventListener('click', () => {
+  fbState = [null, null, null, null, null, null];
+  renderFretboard(); renderChord();
+});
+
+const capoSel = document.getElementById('capoSel');
+capoSel.innerHTML = Array.from({ length: 8 }, (_, i) =>
+  `<option value="${i}">${i === 0 ? 'なし' : i + 'フレット'}</option>`).join('');
+capoSel.addEventListener('change', () => { capo = +capoSel.value; renderChord(); });
+
+renderFretboard();
+renderChord();
 
 setSequence(generatePattern(PRESETS[4].string, PRESETS[4].fret, PRESETS[4].shape, PRESETS[4].n, PRESETS[4].num, PRESETS[4].dir));
 </script>
