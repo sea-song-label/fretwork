@@ -233,6 +233,32 @@
   #micStatus .note { color: var(--accent); font-weight: 700; }
   #micStatus .off-pitch { color: var(--wrong); font-weight: 700; }
   #micError { font-size: 12px; color: var(--wrong); margin-top: 8px; display: none; }
+
+  .habit-lead { font-size: 12.5px; color: var(--text-dim); line-height: 1.7; margin: 0 0 12px; }
+  .habit-count { font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+  #habitBtn.rec { background: var(--wrong); border-color: var(--wrong); color: #fff; }
+  #habitReport { margin-top: 14px; }
+  .habit-item { margin-bottom: 16px; }
+  .habit-item h3 {
+    font-size: 12px; color: var(--text); margin: 0 0 6px; font-weight: 600;
+  }
+  .habit-item .why { font-size: 11.5px; color: var(--text-dim); line-height: 1.6; margin-top: 4px; }
+  .bar-track {
+    display: flex; align-items: flex-end; gap: 2px; height: 56px;
+    background: var(--panel2); border-radius: 6px; padding: 6px; overflow: hidden;
+  }
+  .bar-col { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 3px; }
+  .bar-col .bar { width: 100%; background: var(--accent-dim); border-radius: 2px 2px 0 0; min-height: 1px; }
+  .bar-col.hot .bar { background: var(--accent); }
+  .bar-col .lbl { font-size: 9px; color: var(--text-dim); white-space: nowrap; }
+  .habit-verdict {
+    font-size: 13px; color: var(--accent); background: var(--accent-deep);
+    border-left: 3px solid var(--accent); padding: 9px 12px; border-radius: 0 6px 6px 0;
+    margin-top: 6px; line-height: 1.6;
+  }
+  #habitEscape { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); display: none; }
+  #habitEscape h3 { font-size: 12px; color: var(--accent-dim); letter-spacing: 0.12em; margin: 0 0 8px; }
+  .escape-note { font-size: 12px; color: var(--text-dim); line-height: 1.7; margin-bottom: 10px; }
 </style>
 </head>
 <body>
@@ -318,6 +344,21 @@
     <h2>タブ譜</h2>
     <div id="nowPlaying"><span id="nowIdle">再生すると、ここに今弾く音が大きく出ます</span></div>
     <div id="tabScroll"><div id="tabInner"><div class="empty-hint">プリセットを選ぶか、パターンを生成してください</div></div></div>
+  </div>
+
+  <div class="panel" id="habitPanel">
+    <h2>手癖をしらべる</h2>
+    <p class="habit-lead">
+      メトロノームを止めて、思いつくまま自由に弾いてください。何を弾いたかを溜めて、
+      <strong>音の選び方の癖</strong>を出します。上手い下手ではなく「いつもこうしている」を見るためのものです。
+    </p>
+    <div class="row">
+      <button id="habitBtn" class="primary">● 記録をはじめる</button>
+      <span id="habitCount" class="habit-count">まだ記録がありません</span>
+      <button id="habitClearBtn">記録を消す</button>
+    </div>
+    <div id="habitReport"></div>
+    <div id="habitEscape"></div>
   </div>
 
   <div class="footer-note">
@@ -745,6 +786,7 @@ function micLoop() {
   if (!micEnabled) return;
   micAnalyser.getFloatTimeDomainData(micBuf);
   const freq = autoCorrelate(micBuf, audioCtx.sampleRate);
+  recordHabitFrame(freq);
   const statusEl = document.getElementById('micStatus');
 
   if (freq < 0) {
@@ -788,6 +830,317 @@ function releaseWakeLock() {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && isPlaying) requestWakeLock();
 });
+
+/* ══════════════════════════════════════════════════════════════
+   手癖をしらべる
+
+   ⚠️ 設計上の前提（2026-08-02）：
+   マイクから取れるのは「音の高さ」だけで、同じ音が指板の複数箇所にあるため
+   「何弦の何フレットを押さえたか」は原理的に特定できない。
+   したがってここで見るのは指板上の位置ではなく【音の選び方の癖】である。
+   指板位置まで取りたい場合はMIDIギターが必要（WS/midi-guitar-options.md）。
+   ══════════════════════════════════════════════════════════════ */
+
+const HABIT_KEY = 'fretwork_habit_notes_v1';
+const HABIT_MIN = 60;          // これ未満は何も言わない（少ない標本で決めつけない）
+const PHRASE_GAP_MS = 1200;    // これ以上空いたらフレーズの切れ目とみなす
+let habitNotes = [];
+let habitRecording = false;
+let habitCand = null, habitStable = 0, habitLastMidi = null, habitSilence = 0;
+
+function loadHabit() {
+  try { habitNotes = JSON.parse(localStorage.getItem(HABIT_KEY)) || []; }
+  catch (e) { habitNotes = []; }
+}
+function saveHabit() {
+  try { localStorage.setItem(HABIT_KEY, JSON.stringify(habitNotes.slice(-3000))); }
+  catch (e) { /* 容量超過等は黙って諦める */ }
+}
+
+function recordHabitFrame(freq) {
+  if (!habitRecording) return;
+  if (freq < 0) {
+    habitSilence++;
+    if (habitSilence > 8) habitLastMidi = null;  // 同じ音の弾き直しを拾えるように
+    return;
+  }
+  habitSilence = 0;
+  const r = Math.round(freqToMidi(freq));
+  if (r === habitCand) habitStable++; else { habitCand = r; habitStable = 1; }
+  // 3フレーム（約50ms）安定してはじめて1音とみなす（ノイズで誤検出しないため）
+  if (habitStable === 3 && r !== habitLastMidi && r >= 36 && r <= 88) {
+    habitLastMidi = r;
+    habitNotes.push({ m: r, t: Math.round(performance.now()) });
+    updateHabitCount();
+  }
+}
+
+function updateHabitCount() {
+  const el = document.getElementById('habitCount');
+  if (!el) return;
+  el.textContent = habitNotes.length
+    ? `${habitNotes.length}音を記録${habitNotes.length < HABIT_MIN ? `（あと${HABIT_MIN - habitNotes.length}音で分析できます）` : ''}`
+    : 'まだ記録がありません';
+}
+
+function pct(n, d) { return d ? Math.round(n / d * 100) : 0; }
+
+function bars(items, hotIdx) {
+  const max = Math.max(...items.map(i => i.v), 1);
+  return '<div class="bar-track">' + items.map((it, i) =>
+    `<div class="bar-col ${hotIdx.includes(i) ? 'hot' : ''}">` +
+    `<div class="bar" style="height:${Math.round(it.v / max * 38)}px"></div>` +
+    `<div class="lbl">${it.l}</div></div>`
+  ).join('') + '</div>';
+}
+
+function analyzeHabit() {
+  const n = habitNotes;
+  const out = [];
+  if (n.length < HABIT_MIN) return out;
+
+  // ── ① 音域の偏り
+  const mids = n.map(x => x.m);
+  const lo = Math.min(...mids), hi = Math.max(...mids);
+  const buckets = [];
+  const step = Math.max(2, Math.ceil((hi - lo + 1) / 10));
+  for (let s = lo; s <= hi; s += step) {
+    buckets.push({ l: midiName(s), v: mids.filter(m => m >= s && m < s + step).length, s });
+  }
+  const topB = buckets.reduce((a, b, i) => b.v > buckets[a].v ? i : a, 0);
+  const topShare = pct(buckets[topB].v, n.length);
+  out.push({
+    title: '① よく居る音域',
+    chart: bars(buckets, [topB]),
+    verdict: topShare >= 35
+      ? `${midiName(buckets[topB].s)}あたりに全体の${topShare}%が集まっています。ここが「いつもの場所」です。`
+      : `音域は${midiName(lo)}〜${midiName(hi)}に散らばっていて、特定の高さへの偏りは強くありません。`,
+    why: `全${n.length}音の高さの分布です。`
+  });
+
+  // ── ② 音程の跳び方（同じフレーズ内の隣り合う音の距離）
+  const iv = [];
+  for (let i = 1; i < n.length; i++) {
+    if (n[i].t - n[i - 1].t > PHRASE_GAP_MS) continue;
+    iv.push(Math.abs(n[i].m - n[i - 1].m));
+  }
+  if (iv.length >= 30) {
+    const groups = [
+      { l: '同音', f: v => v === 0 },
+      { l: '半音', f: v => v === 1 },
+      { l: '全音', f: v => v === 2 },
+      { l: '3–4', f: v => v >= 3 && v <= 4 },
+      { l: '5–7', f: v => v >= 5 && v <= 7 },
+      { l: '8以上', f: v => v >= 8 },
+    ].map(g => ({ l: g.l, v: iv.filter(g.f).length }));
+    // ⚠️ 「隣の音へ動いた」を半音・全音だけで数えるとペンタトニックが跳躍扱いになる
+    //    （ペンタは隣り合う音が2〜3半音離れているため）。4半音までを「近い動き」とする。
+    const near = groups[1].v + groups[2].v + groups[3].v;
+    const leap = groups[4].v + groups[5].v;
+    const topI = groups.reduce((a, b, i) => b.v > groups[a].v ? i : a, 0);
+    out.push({
+      title: '② 音の跳び方',
+      chart: bars(groups, [topI]),
+      verdict: pct(near, iv.length) >= 70
+        ? `近い音へ動く移動が${pct(near, iv.length)}%。ほとんど順番になぞっていて、跳躍は${pct(leap, iv.length)}%しかありません。`
+        : pct(leap, iv.length) >= 40
+          ? `5半音以上の跳躍が${pct(leap, iv.length)}%。よく跳ぶ弾き方です。`
+          : `近い動きが${pct(near, iv.length)}%、跳躍が${pct(leap, iv.length)}%。バランスは取れています。`,
+      why: `フレーズの中で連続する${iv.length}回の移動を測りました（${PHRASE_GAP_MS}ms以上空いたら別フレーズ扱い）。スケールの隣り合う音は2〜3半音離れるため、4半音までを「近い動き」として数えています。`
+    });
+  }
+
+  // ── ③ 使っている音の偏り（12音のうちどれを使うか）
+  const pc = Array(12).fill(0);
+  mids.forEach(m => pc[((m % 12) + 12) % 12]++);
+  const used = pc.filter(v => v > 0).length;
+  const sorted = pc.map((v, i) => ({ i, v })).sort((a, b) => b.v - a.v);
+  const top5 = sorted.slice(0, 5).reduce((s, x) => s + x.v, 0);
+  const cold = sorted.filter(x => x.v === 0 || x.v / n.length < 0.02).map(x => NOTE_NAMES[x.i]);
+  out.push({
+    title: '③ 使っている音',
+    chart: bars(NOTE_NAMES.map((nm, i) => ({ l: nm, v: pc[i] })),
+                sorted.slice(0, 5).map(x => x.i)),
+    verdict: pct(top5, n.length) >= 80
+      ? `上位5音だけで全体の${pct(top5, n.length)}%。実質${used}音の中で弾いています${cold.length ? `。ほとんど出てこないのは ${cold.join('・')}` : ''}。`
+      : `12音中${used}音を使っていて、上位5音の割合は${pct(top5, n.length)}%。まんべんなく使えています。`,
+    why: 'オクターブの違いは無視して、12の音名それぞれの出現回数を数えています。'
+  });
+
+  // ── ④ フレーズの終わり方
+  const ends = [];
+  for (let i = 0; i < n.length; i++) {
+    const isLast = i === n.length - 1 || n[i + 1].t - n[i].t > PHRASE_GAP_MS;
+    if (isLast) ends.push(((n[i].m % 12) + 12) % 12);
+  }
+  if (ends.length >= 8) {
+    const ec = Array(12).fill(0);
+    ends.forEach(e => ec[e]++);
+    const topE = ec.indexOf(Math.max(...ec));
+    const share = pct(ec[topE], ends.length);
+    out.push({
+      title: '④ フレーズの終わり方',
+      verdict: share >= 40
+        ? `${ends.length}回のフレーズのうち${share}%が ${NOTE_NAMES[topE]} で終わっています。着地点が決まっているようです。`
+        : `終わりの音は散らばっています（最多の ${NOTE_NAMES[topE]} でも${share}%）。`,
+      why: `${PHRASE_GAP_MS}ms以上の間が空いた直前の音を「フレーズの終わり」として数えました。`
+    });
+  }
+
+  return out;
+}
+
+/* 癖から外れるための練習を作る（この道具の核心）。
+   よく使う音ではなく、ほとんど使っていない音を並べる。 */
+function midiToPositions(midi) {
+  const out = [];
+  for (const s of [1, 2, 3, 4, 5, 6]) {
+    const f = midi - STRING_OPEN_MIDI[s];
+    if (f >= 0 && f <= 22) out.push({ string: s, fret: f });
+  }
+  return out;
+}
+function pickPosition(midi, prev) {
+  const c = midiToPositions(midi);
+  if (!c.length) return null;
+  if (!prev) return c.sort((a, b) => Math.abs(a.fret - 7) - Math.abs(b.fret - 7))[0];
+  return c.sort((a, b) =>
+    (Math.abs(a.fret - prev.fret) * 1.5 + Math.abs(a.string - prev.string)) -
+    (Math.abs(b.fret - prev.fret) * 1.5 + Math.abs(b.string - prev.string)))[0];
+}
+
+function buildEscapeDrill() {
+  const n = habitNotes;
+  if (n.length < HABIT_MIN) return null;
+  const mids = n.map(x => x.m);
+  const pc = Array(12).fill(0);
+  mids.forEach(m => pc[((m % 12) + 12) % 12]++);
+  const coldPCs = pc.map((v, i) => ({ i, v })).sort((a, b) => a.v - b.v).slice(0, 5).map(x => x.i);
+
+  // いつもの音域の外側へ寄せる
+  const lo = Math.min(...mids), hi = Math.max(...mids);
+  const mid = (lo + hi) / 2;
+  const lowHalf = mids.filter(m => m < mid).length;
+  const target = lowHalf > mids.length / 2 ? { from: Math.min(hi + 1, 76), dir: 1 } : { from: Math.max(lo - 1, 40), dir: -1 };
+
+  // いつも使わない跳び幅を狙う
+  const iv = [];
+  for (let i = 1; i < n.length; i++) {
+    if (n[i].t - n[i - 1].t > PHRASE_GAP_MS) continue;
+    iv.push(Math.abs(n[i].m - n[i - 1].m));
+  }
+  // 上の分析と同じ基準（4半音までを「近い動き」）で揃える
+  const near = iv.filter(v => v >= 1 && v <= 4).length;
+  const leapish = near > iv.length * 0.6;   // 近い動きに偏っているなら跳躍を課す
+  const targetLeap = leapish ? 7 : 2;
+
+  // 狙う音域を1.5オクターブ程度の窓に絞る（広すぎるとただ彷徨うだけで音域を狙えない）
+  const win = target.dir === 1
+    ? [Math.max(40, hi - 2), Math.min(79, hi + 17)]
+    : [Math.max(40, lo - 17), Math.min(79, lo + 2)];
+  const cands = [];
+  for (let m = win[0]; m <= win[1]; m++) if (coldPCs.includes(((m % 12) + 12) % 12)) cands.push(m);
+  if (cands.length < 4) return null;
+  const minC = Math.min(...cands), maxC = Math.max(...cands);
+
+  const seq = [];
+  let cur = cands.reduce((a, b) => Math.abs(b - target.from) < Math.abs(a - target.from) ? b : a);
+  let dir = target.dir;
+  for (let k = 0; k < 12; k++) {
+    seq.push(cur);
+    // 直近に弾いた音は選ばない。これが無いと2〜3音の輪から出られなくなる
+    const recent = seq.slice(-3);
+    let pool = cands.filter(m => !recent.includes(m));
+    if (!pool.length) pool = cands.filter(m => m !== cur);
+    if (!pool.length) break;
+    const aim = () => Math.max(minC, Math.min(maxC, cur + dir * targetLeap));
+    // 行き先が窓の外に出るなら先に向きを変える（端で同じ2音を往復するのを防ぐ）
+    if (cur + dir * targetLeap < minC || cur + dir * targetLeap > maxC) dir *= -1;
+    let want = aim();
+    let next = pool.reduce((a, b) => Math.abs(b - want) < Math.abs(a - want) ? b : a);
+    // それでも狙いより極端に近い音しか取れないなら、向きを変えて取り直す
+    if (Math.abs(next - cur) < Math.max(2, targetLeap - 3)) {
+      dir *= -1;
+      want = aim();
+      next = pool.reduce((a, b) => Math.abs(b - want) < Math.abs(a - want) ? b : a);
+    }
+    cur = next;
+  }
+
+  const positions = [];
+  let prev = null;
+  for (const m of seq) {
+    const p = pickPosition(m, prev);
+    if (p) { positions.push(p); prev = p; }
+  }
+  return {
+    seq: positions,
+    coldNames: coldPCs.map(i => NOTE_NAMES[i]),
+    leapish,
+    targetLeap,
+    highLow: target.dir === 1 ? '高い' : '低い'
+  };
+}
+
+function renderHabit() {
+  const rep = document.getElementById('habitReport');
+  const esc = document.getElementById('habitEscape');
+  const items = analyzeHabit();
+  if (!items.length) {
+    rep.innerHTML = `<p class="habit-lead">${habitNotes.length ? `あと${Math.max(0, HABIT_MIN - habitNotes.length)}音ほど記録すると分析できます。` : '記録をはじめて、自由に弾いてみてください。'}</p>`;
+    esc.style.display = 'none';
+    return;
+  }
+  rep.innerHTML = items.map(it =>
+    `<div class="habit-item"><h3>${it.title}</h3>${it.chart || ''}` +
+    `<div class="habit-verdict">${it.verdict}</div>` +
+    `<div class="why">${it.why}</div></div>`
+  ).join('');
+
+  const d = buildEscapeDrill();
+  if (!d) { esc.style.display = 'none'; return; }
+  esc.style.display = 'block';
+  esc.innerHTML =
+    `<h3>癖から外れる練習</h3>` +
+    `<p class="escape-note">あまり使っていない音（${d.coldNames.join('・')}）を、いつもより${d.highLow}音域で、` +
+    `${d.leapish ? `<strong>跳躍させながら</strong>（普段は階段状に動いているため）` : `<strong>階段状に</strong>（普段はよく跳ぶため）`}並べました。` +
+    `弾きにくいはずですが、それが狙いです。</p>` +
+    `<button class="primary" id="useEscapeBtn">この練習をタブ譜に出す</button>`;
+  document.getElementById('useEscapeBtn').addEventListener('click', () => {
+    document.querySelectorAll('#presetGrid button').forEach(b => b.classList.remove('active'));
+    setSequence(d.seq);
+    document.getElementById('tabPanel').scrollIntoView({ behavior: 'smooth' });
+  });
+}
+
+document.getElementById('habitBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('habitBtn');
+  if (habitRecording) {
+    habitRecording = false;
+    btn.classList.remove('rec');
+    btn.textContent = '● 記録をはじめる';
+    saveHabit();
+    renderHabit();
+    return;
+  }
+  if (!micEnabled) await toggleMic();
+  if (!micEnabled) return;   // マイクが使えなければ何もしない
+  habitRecording = true;
+  habitLastMidi = null;
+  btn.classList.add('rec');
+  btn.textContent = '■ 記録をとめて分析する';
+});
+
+document.getElementById('habitClearBtn').addEventListener('click', () => {
+  habitNotes = [];
+  saveHabit();
+  updateHabitCount();
+  renderHabit();
+});
+
+loadHabit();
+updateHabitCount();
+renderHabit();
 
 setSequence(generatePattern(PRESETS[4].string, PRESETS[4].fret, PRESETS[4].shape, PRESETS[4].n, PRESETS[4].num, PRESETS[4].dir));
 </script>
