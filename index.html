@@ -4,22 +4,24 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Fretwork">
-<meta name="theme-color" content="#1a1c21">
+<meta name="theme-color" content="#ece4d3">
 <title>Fretwork</title>
 <style>
   :root {
-    --bg: #0f1420;
-    --panel: #161d2c;
-    --panel2: #1c2438;
-    --accent: #8fb8cc;
-    --accent-dim: #4d6b7d;
-    --accent-deep: #2f4552;
-    --wrong: #e0685f;
-    --text: #e4e7ea;
-    --text-dim: #8892a3;
-    --border: #2b3550;
+    /* 紙と万年筆：クリーム地×インク紺。ダークUIをやめる方向での差別化（2026-08-03決定） */
+    --bg: #ece4d3;
+    --panel: #f6f1e4;
+    --panel2: #ebe2cd;
+    --accent: #2c4470;
+    --accent-dim: #6b7fa0;
+    --accent-deep: #dbe1ec;
+    --wrong: #a8402f;
+    --text: #2b2620;
+    --text-dim: #8a7f68;
+    --border: #d4c8a8;
+    --on-accent: #f6f1e4;
   }
   * { box-sizing: border-box; }
   body {
@@ -79,7 +81,7 @@
     font-family: inherit;
   }
   button:hover { border-color: var(--accent-dim); }
-  button.primary { background: var(--accent); color: #16202a; border-color: var(--accent); font-weight: 600; }
+  button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
   button.primary:hover { opacity: 0.9; }
   button.active { background: var(--accent-deep); border-color: var(--accent); color: var(--accent); }
 
@@ -113,15 +115,17 @@
   .string-row { display: flex; height: 34px; align-items: center; }
   .string-label {
     position: sticky; left: 0; width: 34px; flex-shrink: 0;
-    background: var(--panel2); color: var(--text-dim); font-size: 11px; text-align: center;
+    background: var(--panel2); color: var(--text); font-size: 12px; text-align: center;
     border-right: 1px solid var(--border);
+    font-family: -apple-system, "Hiragino Sans", sans-serif; font-weight: 700;
   }
   .beat-col { width: 46px; flex-shrink: 0; text-align: center; position: relative; }
   .beat-col .fret {
     display: inline-block; min-width: 22px; padding: 2px 4px; border-radius: 4px;
-    font-size: 13px; font-variant-numeric: tabular-nums;
+    font-size: 14px; font-variant-numeric: tabular-nums;
+    font-family: -apple-system, "Hiragino Sans", sans-serif; font-weight: 700;
   }
-  .beat-col.current .fret { background: var(--accent); color: #16202a; font-weight: 700; }
+  .beat-col.current .fret { background: var(--accent); color: var(--on-accent); font-weight: 700; }
   .beat-col.current.judged-wrong .fret { background: var(--wrong); color: #fff; }
   .pick-row { display: flex; margin-top: 4px; }
   .pick-row .pick-cell { width: 46px; flex-shrink: 0; text-align: center; font-size: 10px; color: var(--text-dim); }
@@ -264,7 +268,10 @@
   #fretboard { overflow-x: auto; padding-bottom: 4px; }
   .fb-grid { display: inline-block; min-width: 100%; }
   .fb-row { display: flex; align-items: center; height: 34px; }
-  .fb-name { width: 34px; flex-shrink: 0; font-size: 11px; color: var(--text-dim); text-align: center; }
+  .fb-name {
+    width: 34px; flex-shrink: 0; font-size: 12px; color: var(--text); text-align: center;
+    font-family: -apple-system, "Hiragino Sans", sans-serif; font-weight: 700;
+  }
   .fb-mute {
     width: 26px; flex-shrink: 0; text-align: center; font-size: 13px; cursor: pointer;
     color: var(--text-dim); border-radius: 4px;
@@ -282,12 +289,15 @@
   .fb-cell.on { }
   .fb-dot {
     width: 22px; height: 22px; border-radius: 50%; background: var(--accent);
-    color: #16202a; font-size: 11px; font-weight: 700; display: flex;
+    color: var(--on-accent); font-size: 11px; font-weight: 700; display: flex;
     align-items: center; justify-content: center; position: relative; z-index: 1;
   }
   .fb-head { display: flex; align-items: center; height: 20px; }
-  .fb-head .fb-name, .fb-head .fb-mute { font-size: 10px; }
-  .fb-head .fb-cell { border: none; height: 20px; font-size: 10px; color: var(--text-dim); }
+  .fb-head .fb-name, .fb-head .fb-mute { font-size: 10px; font-weight: 400; }
+  .fb-head .fb-cell {
+    border: none; height: 20px; font-size: 11px; color: var(--text);
+    font-family: -apple-system, "Hiragino Sans", sans-serif; font-weight: 700;
+  }
   .fb-head .fb-cell::before { display: none; }
 
   .chord-card {
