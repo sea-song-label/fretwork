@@ -398,10 +398,10 @@
   </div>
 
   <div class="panel" id="chordPanel">
-    <h2>このコードなに?</h2>
+    <h2>Your Voicing</h2>
     <p class="habit-lead">
       いま押さえている形を指板に打ち込むと、<strong>そう読めるコードを全部</strong>、理由つきで出します。
-      どれを採るかは決めません。決めるのはRさんです。
+      どれを採るかは決めません。決めるのはあなたです。
     </p>
     <div class="row" style="margin-bottom:10px;">
       <div class="field"><label>カポ</label>
@@ -436,7 +436,7 @@
     ・和音ではなく<strong>単音の練習用</strong>です。歪ませすぎた音や、生活音の大きい場所では検出が不安定になります。<br>
     ・<strong>「音を鳴らす」をオンにしたままマイクを使うと、アプリ自身の音を拾ってしまいます</strong>。マイク判定中はオフにするか、イヤホンを使ってください。<br>
     <br>
-    Fretwork — Sea Song Label / Forge（2026-08-02作成・自分用ツール）。形状（下降形・上昇形・ジグザグ）はオリジナル設計で、見本にしたアプリの内部ロジックそのままではありません。
+    Fretwork — Sea Song Label
   </div>
 </div>
 
@@ -1350,7 +1350,7 @@ function renderChord() {
       `</div>`;
   }).join('') +
   (results.length > 1 ? `<div class="chord-none">${results.length}通りの読み方があります。` +
-    `どれが正しいということはなく、前後の流れの中でRさんが選ぶものです。</div>` : '');
+    `どれが正しいということはなく、前後の流れの中であなたが選ぶものです。</div>` : '');
 }
 
 document.getElementById('fretboard').addEventListener('click', e => {
