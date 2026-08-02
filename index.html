@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Fretwork">
+<meta name="theme-color" content="#1a1c21">
+<title>Fretwork</title>
+<style>
+  :root {
+    --bg: #1a1c21;
+    --panel: #22252c;
+    --panel2: #2a2e36;
+    --accent: #8fb8cc;
+    --accent-dim: #4d6b7d;
+    --accent-deep: #2f4552;
+    --wrong: #e0685f;
+    --text: #e4e7ea;
+    --text-dim: #878e97;
+    --border: #343945;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Hiragino Sans", "Helvetica Neue", sans-serif;
+    padding: 20px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  h1 {
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+    font-size: 20px; font-weight: 400; margin: 0 0 5px; letter-spacing: 0.06em;
+    color: var(--accent);
+  }
+  .sub { color: var(--text-dim); font-size: 12px; margin-bottom: 20px; }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 14px;
+  }
+  .panel h2 {
+    font-size: 11px;
+    color: var(--accent-dim);
+    letter-spacing: 0.16em;
+    margin: 0 0 12px;
+    padding-bottom: 7px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 11px; color: var(--text-dim); }
+  select, input[type=number], input[type=text], textarea {
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 7px 9px;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  input[type=number] { width: 70px; }
+  textarea { width: 100%; min-height: 44px; resize: vertical; font-family: monospace; font-size: 12px; }
+
+  button {
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  button:hover { border-color: var(--accent-dim); }
+  button.primary { background: var(--accent); color: #16202a; border-color: var(--accent); font-weight: 600; }
+  button.primary:hover { opacity: 0.9; }
+  button.active { background: var(--accent-deep); border-color: var(--accent); color: var(--accent); }
+
+  .preset-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .preset-grid button { text-align: left; font-size: 12px; padding: 8px 10px; line-height: 1.4; }
+  @media (max-width: 640px) { .preset-grid { grid-template-columns: repeat(2, 1fr); } }
+
+  .transport { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .bpm-display { font-size: 28px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .bpm-display span { font-size: 12px; color: var(--text-dim); font-weight: 400; margin-left: 4px; }
+
+  .phase-bar { display: flex; gap: 8px; margin-bottom: 10px; }
+  .phase-chip {
+    flex: 1; text-align: center; padding: 10px; border-radius: 8px;
+    background: var(--panel2); border: 1px solid var(--border); font-size: 12px; color: var(--text-dim);
+  }
+  .phase-chip.current { background: var(--accent-deep); color: var(--accent); border-color: var(--accent-dim); }
+  .phase-chip .mins { font-size: 10px; opacity: 0.7; }
+
+  .timer-big { font-size: 42px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; color: var(--accent); }
+  .timer-label { text-align: center; color: var(--text-dim); font-size: 13px; margin-bottom: 4px; }
+
+  #tabScroll {
+    overflow-x: auto;
+    background: var(--panel2);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    padding: 10px 0;
+  }
+  #tabInner { display: inline-block; padding: 0 50%; }
+  .string-row { display: flex; height: 34px; align-items: center; }
+  .string-label {
+    position: sticky; left: 0; width: 34px; flex-shrink: 0;
+    background: var(--panel2); color: var(--text-dim); font-size: 11px; text-align: center;
+    border-right: 1px solid var(--border);
+  }
+  .beat-col { width: 46px; flex-shrink: 0; text-align: center; position: relative; }
+  .beat-col .fret {
+    display: inline-block; min-width: 22px; padding: 2px 4px; border-radius: 4px;
+    font-size: 13px; font-variant-numeric: tabular-nums;
+  }
+  .beat-col.current .fret { background: var(--accent); color: #16202a; font-weight: 700; }
+  .beat-col.current.judged-wrong .fret { background: var(--wrong); color: #fff; }
+  .pick-row { display: flex; margin-top: 4px; }
+  .pick-row .pick-cell { width: 46px; flex-shrink: 0; text-align: center; font-size: 10px; color: var(--text-dim); }
+  .pick-row .pick-cell.current { color: var(--accent); font-weight: 700; }
+  .beat-line { position: absolute; left: 0; top: -50vh; bottom: -50vh; width: 2px; background: rgba(155,229,100,0.15); pointer-events: none; }
+
+  .empty-hint { color: var(--text-dim); font-size: 13px; text-align: center; padding: 30px 0; }
+
+  .footer-note { color: var(--text-dim); font-size: 11px; margin-top: 16px; line-height: 1.6; }
+
+  /* 現在の音を大きく表示（スマホでギターを持ったまま見るための主役） */
+  #nowPlaying {
+    display: flex; align-items: baseline; justify-content: center; gap: 14px;
+    padding: 14px 0 10px; min-height: 74px;
+  }
+  #nowString { font-size: 15px; color: var(--text-dim); }
+  #nowFret {
+    font-size: 54px; font-weight: 700; line-height: 1;
+    color: var(--accent); font-variant-numeric: tabular-nums;
+  }
+  #nowFret.wrong { color: var(--wrong); }
+  #nowPick { font-size: 22px; color: var(--text-dim); font-weight: 700; }
+  #nowIdle { color: var(--text-dim); font-size: 14px; }
+
+  details.setup { border: 1px solid var(--border); border-radius: 10px; background: var(--panel); margin-bottom: 14px; }
+  details.setup > summary {
+    cursor: pointer; padding: 14px 16px; font-size: 12px;
+    color: var(--accent-dim); letter-spacing: 0.16em; list-style: none;
+  }
+  details.setup > summary::-webkit-details-marker { display: none; }
+  details.setup > summary::after { content: ' ▾'; }
+  details.setup[open] > summary::after { content: ' ▴'; }
+  details.setup > .setup-body { padding: 0 16px 16px; }
+
+  /* ── スマホ（縦持ち） ───────────────────────────── */
+  @media (max-width: 700px) {
+    body { padding: 12px 12px 96px; }
+    h1 { font-size: 17px; }
+    .sub { font-size: 11px; margin-bottom: 14px; }
+    .panel { padding: 13px; }
+
+    .preset-grid { grid-template-columns: 1fr 1fr; gap: 7px; }
+    .preset-grid button { font-size: 12px; padding: 11px 10px; }
+
+    .field { flex: 1 1 45%; }
+    .field select, .field input { width: 100%; }
+    input[type=number] { width: 100%; }
+    #generateBtn, #useCustomBtn { width: 100%; margin-top: 6px; }
+
+    .phase-chip { font-size: 11px; padding: 8px 4px; }
+    .timer-big { font-size: 34px; }
+
+    /* タブ譜を主役に：セルを大きく・文字も大きく */
+    .beat-col { width: 54px; }
+    .beat-col .fret { font-size: 17px; min-width: 28px; padding: 3px 5px; }
+    .string-row { height: 40px; }
+    .string-label { width: 30px; font-size: 10px; }
+    .pick-row .pick-cell { width: 54px; font-size: 12px; }
+
+    #nowFret { font-size: 64px; }
+    #nowPlaying { min-height: 84px; }
+
+    /* 再生・BPMは常に手元に固定（ギターを持ったまま押せるように） */
+    #transportBar {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+      background: var(--panel); border-top: 1px solid var(--border);
+      padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+      display: flex; align-items: center; gap: 10px;
+      flex-wrap: nowrap;
+      box-shadow: 0 -6px 18px rgba(0,0,0,0.35);
+    }
+    #transportBar .bpm-display { font-size: 19px; flex-shrink: 0; }
+    #transportBar .bpm-display span:last-child { display: none; }
+    #transportBar input[type=range] { flex: 1; min-width: 0; }
+    #transportBar button { padding: 13px 18px; font-size: 15px; flex-shrink: 0; }
+    /* 再生ボタンが停止も兼ねるので、狭い画面では専用の停止ボタンは出さない */
+    #stopBtn { display: none; }
+    #tempoPanelInner { display: none; }
+  }
+
+  /* ── スマホ（横持ち）＝タブ譜を最大化 ──────────────── */
+  @media (max-width: 900px) and (orientation: landscape) {
+    /* タブ譜と再生バーだけ残す（#tempoPanelは再生バーの親なので消さない） */
+    #sessionPanel, details.setup, h1, .sub, .footer-note,
+    #tempoPanelInner, #micRow { display: none; }
+    #tempoPanel { padding: 0; border: none; background: none; margin: 0; }
+    body { padding: 6px 6px 74px; }
+    #tabPanel { margin-bottom: 6px; }
+    #nowFret { font-size: 46px; }
+    #nowPlaying { min-height: 56px; padding: 5px 0; }
+    .string-row { height: 32px; }
+    /* 横向きのiPhoneは幅が700pxを超えるため、固定バーの指定をここでも書く */
+    #transportBar {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+      background: var(--panel); border-top: 1px solid var(--border);
+      padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+      display: flex; align-items: center; gap: 10px; flex-wrap: nowrap;
+      box-shadow: 0 -6px 18px rgba(0,0,0,0.35);
+    }
+    #transportBar .bpm-display { font-size: 18px; flex-shrink: 0; }
+    #transportBar .bpm-display span:last-child { display: none; }
+    #transportBar input[type=range] { flex: 1; min-width: 0; }
+    #transportBar button { padding: 11px 18px; font-size: 15px; flex-shrink: 0; }
+    #stopBtn { display: none; }
+  }
+
+  #micBtn.mic-on { background: var(--wrong); border-color: var(--wrong); color: #fff; }
+  #micStatus { font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+  #micStatus .note { color: var(--accent); font-weight: 700; }
+  #micStatus .off-pitch { color: var(--wrong); font-weight: 700; }
+  #micError { font-size: 12px; color: var(--wrong); margin-top: 8px; display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Fretwork</h1>
+  <div class="sub">開始位置とパターンを指定 → タブ譜を自動生成 → メトロノーム同期で自動スクロール</div>
+
+  <div class="panel" id="sessionPanel">
+    <h2>セッション</h2>
+    <div class="phase-bar" id="phaseBar"></div>
+    <div class="row" style="margin-bottom:10px;">
+      <div class="field"><label>ウォームアップ(分)</label><input type="number" id="minWarmup" value="3" min="0" max="60"></div>
+      <div class="field"><label>ルーティン(分)</label><input type="number" id="minRoutine" value="10" min="0" max="60"></div>
+      <div class="field"><label>即興(分)</label><input type="number" id="minImprov" value="7" min="0" max="60"></div>
+      <button class="primary" id="sessionBtn" style="align-self:flex-end;">セッション開始</button>
+    </div>
+    <div class="timer-label" id="timerLabel">未開始</div>
+    <div class="timer-big" id="timerBig">--:--</div>
+  </div>
+
+  <div class="panel" id="tempoPanel">
+    <h2 id="tempoPanelInner">テンポ・マイク</h2>
+    <div class="transport" id="transportBar">
+      <div class="bpm-display"><span id="bpmVal">100</span><span>BPM</span></div>
+      <input type="range" id="bpmSlider" min="40" max="200" value="100" style="flex:1; min-width:120px;">
+      <button id="playBtn" class="primary">▶ 再生</button>
+      <button id="stopBtn">■ 停止</button>
+    </div>
+    <div class="row" id="micRow" style="margin-top:12px;">
+      <label style="font-size:12px; color:var(--text-dim); display:flex; align-items:center; gap:6px;">
+        <input type="checkbox" id="soundToggle"> 音を鳴らす
+      </label>
+      <button id="micBtn">🎤 マイクでチェック</button>
+      <span id="micStatus"></span>
+    </div>
+    <div id="micError"></div>
+  </div>
+
+  <details class="setup">
+    <summary>プリセット（開始位置・形状）</summary>
+    <div class="setup-body"><div class="preset-grid" id="presetGrid"></div></div>
+  </details>
+
+  <details class="setup">
+    <summary>パターンを作る</summary>
+    <div class="setup-body">
+    <div class="row">
+      <div class="field"><label>開始弦</label>
+        <select id="startString">
+          <option value="1">1弦</option><option value="2">2弦</option><option value="3">3弦</option>
+          <option value="4">4弦</option><option value="5">5弦</option><option value="6">6弦</option>
+        </select>
+      </div>
+      <div class="field"><label>開始フレット</label><input type="number" id="startFret" value="12" min="0" max="24"></div>
+      <div class="field"><label>形状</label>
+        <select id="shape">
+          <option value="descend">下降形</option>
+          <option value="ascend">上昇形</option>
+          <option value="zigzag">ジグザグ（往復）</option>
+        </select>
+      </div>
+      <div class="field"><label>1弦あたりの音数</label><input type="number" id="notesPerString" value="4" min="2" max="8"></div>
+      <div class="field"><label>移動方向</label>
+        <select id="direction">
+          <option value="toBass">太い弦へ移動</option>
+          <option value="toTreble">細い弦へ移動</option>
+        </select>
+      </div>
+      <div class="field"><label>移動する弦数</label><input type="number" id="numStrings" value="4" min="1" max="6"></div>
+      <button class="primary" id="generateBtn" style="align-self:flex-end;">生成</button>
+    </div>
+    <div class="row" style="margin-top:10px;">
+      <div class="field" style="flex:1;">
+        <label>自作ループ（例: 6-5,6-6,6-7,6-8,5-5,5-6,5-7,5-8）</label>
+        <textarea id="customInput" placeholder="弦-フレット をカンマ区切りで入力"></textarea>
+      </div>
+      <button id="useCustomBtn" style="align-self:flex-end;">このループを使う</button>
+    </div>
+    </div>
+  </details>
+
+  <div class="panel" id="tabPanel">
+    <h2>タブ譜</h2>
+    <div id="nowPlaying"><span id="nowIdle">再生すると、ここに今弾く音が大きく出ます</span></div>
+    <div id="tabScroll"><div id="tabInner"><div class="empty-hint">プリセットを選ぶか、パターンを生成してください</div></div></div>
+  </div>
+
+  <div class="footer-note">
+    <strong>マイク判定について</strong>：「🎤 マイクでチェック」を押すとブラウザがマイクの使用許可を聞いてくるので、許可してください。再生中は、いま光っているフレット番号と実際に弾いた音を比べ、<span style="color:var(--wrong);">違っていれば赤く</span>なります。<br>
+    ・判定は<strong>音名（ドレミ）で照合</strong>します。同じ音名ならオクターブ違いも正解扱いです（同じ音が指板の複数箇所にあるため）。<br>
+    ・許容範囲は±40セント（半音の4割）。チューニングが多少甘くても赤くはなりませんが、半音ズレたら赤くなります。<br>
+    ・和音ではなく<strong>単音の練習用</strong>です。歪ませすぎた音や、生活音の大きい場所では検出が不安定になります。<br>
+    ・<strong>「音を鳴らす」をオンにしたままマイクを使うと、アプリ自身の音を拾ってしまいます</strong>。マイク判定中はオフにするか、イヤホンを使ってください。<br>
+    <br>
+    Fretwork — Sea Song Label / Forge（2026-08-02作成・自分用ツール）。形状（下降形・上昇形・ジグザグ）はオリジナル設計で、見本にしたアプリの内部ロジックそのままではありません。
+  </div>
+</div>
+
+<script>
+const STRING_OPEN_MIDI = { 1: 64, 2: 59, 3: 55, 4: 50, 5: 45, 6: 40 };
+
+function generatePattern(startString, startFret, shape, notesPerString, numStrings, direction) {
+  const seq = [];
+  let str = startString;
+  for (let s = 0; s < numStrings; s++) {
+    let frets;
+    if (shape === 'descend') {
+      frets = Array.from({length: notesPerString}, (_, i) => startFret - i);
+    } else if (shape === 'ascend') {
+      frets = Array.from({length: notesPerString}, (_, i) => startFret + i);
+    } else {
+      const half = Math.ceil(notesPerString / 2);
+      const down = Array.from({length: half}, (_, i) => startFret - i);
+      const up = Array.from({length: notesPerString - half}, (_, i) => startFret - half + 1 + i);
+      frets = down.concat(up);
+    }
+    frets = frets.filter(f => f >= 0 && f <= 24);
+    for (const f of frets) seq.push({ string: str, fret: f });
+    str = direction === 'toBass' ? str + 1 : str - 1;
+    if (str < 1 || str > 6) break;
+  }
+  return seq;
+}
+
+function parseCustom(text) {
+  const parts = text.split(',').map(s => s.trim()).filter(Boolean);
+  const seq = [];
+  for (const p of parts) {
+    const m = p.match(/^(\d)\s*-\s*(\d+)$/);
+    if (m) seq.push({ string: parseInt(m[1]), fret: parseInt(m[2]) });
+  }
+  return seq;
+}
+
+const PRESETS = [
+  { label: '6弦5Fスタート\n下降形', string: 6, fret: 5, shape: 'descend', n: 4, dir: 'toTreble', num: 4 },
+  { label: '6弦8Fスタート\n上昇形', string: 6, fret: 8, shape: 'ascend', n: 4, dir: 'toTreble', num: 4 },
+  { label: '5弦7Fスタート\nジグザグ', string: 5, fret: 7, shape: 'zigzag', n: 6, dir: 'toTreble', num: 4 },
+  { label: '4弦9Fスタート\n下降形', string: 4, fret: 9, shape: 'descend', n: 4, dir: 'toTreble', num: 3 },
+  { label: '3弦12Fスタート\n下降形', string: 3, fret: 12, shape: 'descend', n: 4, dir: 'toBass', num: 3 },
+  { label: '2弦15Fスタート\nジグザグ', string: 2, fret: 15, shape: 'zigzag', n: 6, dir: 'toBass', num: 3 },
+  { label: '1弦12Fスタート\n上昇形', string: 1, fret: 12, shape: 'ascend', n: 4, dir: 'toBass', num: 3 },
+  { label: '全弦 開放付近\n下降形', string: 6, fret: 4, shape: 'descend', n: 4, dir: 'toTreble', num: 6 },
+];
+
+let currentSeq = [];
+let playIndex = 0;
+let picks = [];
+
+function computePicks(len) {
+  const arr = [];
+  for (let i = 0; i < len; i++) arr.push(i % 2 === 0 ? 'D' : 'U');
+  return arr;
+}
+
+let displayedIndex = -1;
+
+function renderTab(highlightIndex) {
+  displayedIndex = highlightIndex;
+  const inner = document.getElementById('tabInner');
+  if (!currentSeq.length) {
+    inner.innerHTML = '<div class="empty-hint">プリセットを選ぶか、パターンを生成してください</div>';
+    return;
+  }
+  const rows = [1,2,3,4,5,6].map(str => {
+    const cells = currentSeq.map((note, i) => {
+      const val = note.string === str ? note.fret : '';
+      const cur = (i === highlightIndex && val !== '') ? 'current' : '';
+      return `<div class="beat-col ${cur}"><span class="fret">${val}</span></div>`;
+    }).join('');
+    return `<div class="string-row"><div class="string-label">${str}弦</div>${cells}</div>`;
+  }).join('');
+  const pickCells = currentSeq.map((_, i) => {
+    const cur = i === highlightIndex ? 'current' : '';
+    return `<div class="pick-cell ${cur}">${picks[i] || ''}</div>`;
+  }).join('');
+  inner.innerHTML = rows + `<div class="pick-row"><div class="string-label"></div>${pickCells}</div>`;
+  scrollToCurrent(highlightIndex);
+  renderNowPlaying(highlightIndex);
+}
+
+function renderNowPlaying(index) {
+  const box = document.getElementById('nowPlaying');
+  if (index < 0 || !currentSeq.length) {
+    box.innerHTML = '<span id="nowIdle">再生すると、ここに今弾く音が大きく出ます</span>';
+    return;
+  }
+  const n = currentSeq[index % currentSeq.length];
+  box.innerHTML =
+    `<span id="nowString">${n.string}弦</span>` +
+    `<span id="nowFret">${n.fret}</span>` +
+    `<span id="nowString">フレット</span>` +
+    `<span id="nowPick">${picks[index] || ''}</span>`;
+}
+
+function scrollToCurrent(index) {
+  const scroller = document.getElementById('tabScroll');
+  const colWidth = 46;
+  const stringLabelWidth = 34;
+  const target = stringLabelWidth + colWidth * index + colWidth / 2;
+  const center = scroller.clientWidth / 2;
+  scroller.scrollLeft = target - center;
+}
+
+function setSequence(seq) {
+  currentSeq = seq;
+  picks = computePicks(seq.length);
+  playIndex = 0;
+  renderTab(isPlaying ? 0 : -1);
+}
+
+document.getElementById('presetGrid').innerHTML = PRESETS.map((p, i) =>
+  `<button data-idx="${i}">${p.label.replace('\n', '<br>')}</button>`
+).join('');
+document.getElementById('presetGrid').addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  document.querySelectorAll('#presetGrid button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const p = PRESETS[btn.dataset.idx];
+  setSequence(generatePattern(p.string, p.fret, p.shape, p.n, p.num, p.dir));
+});
+
+document.getElementById('generateBtn').addEventListener('click', () => {
+  const startString = parseInt(document.getElementById('startString').value);
+  const startFret = parseInt(document.getElementById('startFret').value);
+  const shape = document.getElementById('shape').value;
+  const n = parseInt(document.getElementById('notesPerString').value);
+  const numStrings = parseInt(document.getElementById('numStrings').value);
+  const direction = document.getElementById('direction').value;
+  document.querySelectorAll('#presetGrid button').forEach(b => b.classList.remove('active'));
+  setSequence(generatePattern(startString, startFret, shape, n, numStrings, direction));
+});
+
+document.getElementById('useCustomBtn').addEventListener('click', () => {
+  const seq = parseCustom(document.getElementById('customInput').value);
+  document.querySelectorAll('#presetGrid button').forEach(b => b.classList.remove('active'));
+  setSequence(seq);
+});
+
+let bpm = 100;
+const bpmSlider = document.getElementById('bpmSlider');
+const bpmVal = document.getElementById('bpmVal');
+bpmSlider.addEventListener('input', () => {
+  bpm = parseInt(bpmSlider.value);
+  bpmVal.textContent = bpm;
+});
+
+let audioCtx = null;
+let isPlaying = false;
+let nextNoteTime = 0;
+let schedulerTimer = null;
+const LOOKAHEAD = 25;
+const SCHEDULE_AHEAD = 0.1;
+
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function clickSound(time, accent) {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.frequency.value = accent ? 1600 : 1100;
+  gain.gain.setValueAtTime(0.001, time);
+  gain.gain.exponentialRampToValueAtTime(0.25, time + 0.002);
+  gain.gain.exponentialRampToValueAtTime(0.001, time + 0.04);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(time);
+  osc.stop(time + 0.05);
+}
+
+function noteSound(time, string, fret) {
+  const midi = STRING_OPEN_MIDI[string] + fret;
+  const freq = 440 * Math.pow(2, (midi - 69) / 12);
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.001, time);
+  gain.gain.exponentialRampToValueAtTime(0.15, time + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.001, time + 0.25);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(time);
+  osc.stop(time + 0.26);
+}
+
+function scheduler() {
+  while (nextNoteTime < audioCtx.currentTime + SCHEDULE_AHEAD) {
+    const idx = currentSeq.length ? playIndex % currentSeq.length : -1;
+    const accent = idx === 0;
+    clickSound(nextNoteTime, accent);
+    if (document.getElementById('soundToggle').checked && currentSeq.length) {
+      const note = currentSeq[idx];
+      noteSound(nextNoteTime, note.string, note.fret);
+    }
+    const delay = (nextNoteTime - audioCtx.currentTime) * 1000;
+    setTimeout(() => { if (isPlaying) renderTab(idx); }, Math.max(0, delay));
+    nextNoteTime += 60 / bpm;
+    playIndex++;
+  }
+}
+
+function startPlayback() {
+  if (isPlaying) return;
+  ensureAudio();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  isPlaying = true;
+  playIndex = 0;
+  nextNoteTime = audioCtx.currentTime + 0.05;
+  schedulerTimer = setInterval(scheduler, LOOKAHEAD);
+  document.getElementById('playBtn').classList.add('active');
+  document.getElementById('playBtn').textContent = '⏸ 停止';
+  requestWakeLock();
+}
+
+function stopPlayback() {
+  isPlaying = false;
+  clearInterval(schedulerTimer);
+  document.getElementById('playBtn').classList.remove('active');
+  document.getElementById('playBtn').textContent = '▶ 再生';
+  releaseWakeLock();
+  renderTab(-1);
+}
+
+document.getElementById('playBtn').addEventListener('click', () => {
+  isPlaying ? stopPlayback() : startPlayback();
+});
+document.getElementById('stopBtn').addEventListener('click', stopPlayback);
+
+const phases = [
+  { key: 'warmup', name: 'ウォームアップ' },
+  { key: 'routine', name: 'ルーティン' },
+  { key: 'improv', name: '即興' },
+];
+let sessionTimer = null;
+let sessionRunning = false;
+let phaseIdx = 0;
+let phaseSecondsLeft = 0;
+
+function renderPhaseBar() {
+  const bar = document.getElementById('phaseBar');
+  const mins = [
+    parseInt(document.getElementById('minWarmup').value) || 0,
+    parseInt(document.getElementById('minRoutine').value) || 0,
+    parseInt(document.getElementById('minImprov').value) || 0,
+  ];
+  bar.innerHTML = phases.map((p, i) =>
+    `<div class="phase-chip ${sessionRunning && i === phaseIdx ? 'current' : ''}">${p.name}<div class="mins">${mins[i]}分</div></div>`
+  ).join('');
+}
+renderPhaseBar();
+['minWarmup','minRoutine','minImprov'].forEach(id =>
+  document.getElementById(id).addEventListener('input', renderPhaseBar)
+);
+
+function formatTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+
+function startSession() {
+  const mins = [
+    parseInt(document.getElementById('minWarmup').value) || 0,
+    parseInt(document.getElementById('minRoutine').value) || 0,
+    parseInt(document.getElementById('minImprov').value) || 0,
+  ];
+  phaseIdx = mins.findIndex(m => m > 0);
+  if (phaseIdx === -1) return;
+  sessionRunning = true;
+  phaseSecondsLeft = mins[phaseIdx] * 60;
+  document.getElementById('sessionBtn').textContent = 'セッション終了';
+  startPlayback();
+  tickSession(mins);
+}
+
+function tickSession(mins) {
+  renderPhaseBar();
+  document.getElementById('timerLabel').textContent = phases[phaseIdx].name;
+  document.getElementById('timerBig').textContent = formatTime(phaseSecondsLeft);
+  sessionTimer = setInterval(() => {
+    phaseSecondsLeft--;
+    document.getElementById('timerBig').textContent = formatTime(phaseSecondsLeft);
+    if (phaseSecondsLeft <= 0) {
+      let next = phaseIdx + 1;
+      while (next < mins.length && mins[next] === 0) next++;
+      if (next >= mins.length) {
+        endSession();
+        return;
+      }
+      phaseIdx = next;
+      phaseSecondsLeft = mins[phaseIdx] * 60;
+      renderPhaseBar();
+      document.getElementById('timerLabel').textContent = phases[phaseIdx].name;
+    }
+  }, 1000);
+}
+
+function endSession() {
+  sessionRunning = false;
+  clearInterval(sessionTimer);
+  stopPlayback();
+  document.getElementById('timerLabel').textContent = '完了';
+  document.getElementById('timerBig').textContent = '--:--';
+  document.getElementById('sessionBtn').textContent = 'セッション開始';
+  renderPhaseBar();
+}
+
+document.getElementById('sessionBtn').addEventListener('click', () => {
+  if (sessionRunning) { endSession(); } else { startSession(); }
+});
+
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+
+function freqToMidi(freq) {
+  return 69 + 12 * Math.log2(freq / 440);
+}
+
+function midiName(midi) {
+  const n = Math.round(midi);
+  return NOTE_NAMES[((n % 12) + 12) % 12] + (Math.floor(n / 12) - 1);
+}
+
+// 標準的な自己相関法（ギターチューナーアプリ等で広く使われる方式）。
+// RMSで無音判定→トリム→自己相関のピークを放物線補間、という3段構成。
+function autoCorrelate(buf, sampleRate) {
+  const SIZE = buf.length;
+  let rms = 0;
+  for (let i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
+  rms = Math.sqrt(rms / SIZE);
+  if (rms < 0.01) return -1;
+
+  let r1 = 0, r2 = SIZE - 1;
+  const thres = 0.2;
+  for (let i = 0; i < SIZE / 2; i++) { if (Math.abs(buf[i]) < thres) { r1 = i; break; } }
+  for (let i = 1; i < SIZE / 2; i++) { if (Math.abs(buf[SIZE - i]) < thres) { r2 = SIZE - i; break; } }
+  const trimmed = buf.slice(r1, r2);
+  const n = trimmed.length;
+  if (n < 2) return -1;
+
+  const c = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n - i; j++) c[i] += trimmed[j] * trimmed[j + i];
+  }
+  let d = 0;
+  while (d < n - 1 && c[d] > c[d + 1]) d++;
+  let maxVal = -1, maxPos = -1;
+  for (let i = d; i < n; i++) {
+    if (c[i] > maxVal) { maxVal = c[i]; maxPos = i; }
+  }
+  if (maxPos <= 0 || maxPos >= n - 1) return -1;
+  const [x1, x2, x3] = [c[maxPos - 1], c[maxPos], c[maxPos + 1]];
+  const a = (x1 + x3 - 2 * x2) / 2;
+  const b = (x3 - x1) / 2;
+  const shift = a ? -b / (2 * a) : 0;
+  const T0 = maxPos + shift;
+  return sampleRate / T0;
+}
+
+function pitchClassCentsDiff(midiA, midiB) {
+  let diff = (midiA - midiB) % 12;
+  if (diff > 6) diff -= 12;
+  if (diff < -6) diff += 12;
+  return diff * 100;
+}
+
+const CENTS_TOLERANCE = 40;
+let micStream = null, micAnalyser = null, micBuf = null, micEnabled = false;
+
+async function toggleMic() {
+  const btn = document.getElementById('micBtn');
+  const errBox = document.getElementById('micError');
+  errBox.style.display = 'none';
+  if (micEnabled) {
+    micEnabled = false;
+    btn.classList.remove('mic-on');
+    btn.textContent = '🎤 マイクでチェック';
+    document.getElementById('micStatus').textContent = '';
+    if (micStream) micStream.getTracks().forEach(t => t.stop());
+    micStream = null;
+    return;
+  }
+  if (!window.isSecureContext) {
+    errBox.textContent = 'マイクを使うには http://localhost 経由（またはhttps）で開く必要があります。file:// では動きません。';
+    errBox.style.display = 'block';
+    return;
+  }
+  try {
+    ensureAudio();
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
+    const source = audioCtx.createMediaStreamSource(micStream);
+    micAnalyser = audioCtx.createAnalyser();
+    micAnalyser.fftSize = 2048;
+    micBuf = new Float32Array(micAnalyser.fftSize);
+    source.connect(micAnalyser);
+    micEnabled = true;
+    btn.classList.add('mic-on');
+    btn.textContent = '🎤 停止';
+  } catch (e) {
+    errBox.textContent = 'マイクを使えませんでした：' + e.message + '（ブラウザの権限設定を確認してください）';
+    errBox.style.display = 'block';
+  }
+}
+document.getElementById('micBtn').addEventListener('click', toggleMic);
+
+function micLoop() {
+  requestAnimationFrame(micLoop);
+  if (!micEnabled) return;
+  micAnalyser.getFloatTimeDomainData(micBuf);
+  const freq = autoCorrelate(micBuf, audioCtx.sampleRate);
+  const statusEl = document.getElementById('micStatus');
+
+  if (freq < 0) {
+    statusEl.innerHTML = '（音を検出していません）';
+    document.querySelectorAll('.beat-col.current').forEach(el => el.classList.remove('judged-wrong'));
+    return;
+  }
+
+  const detectedMidi = freqToMidi(freq);
+  const detectedName = midiName(detectedMidi);
+
+  if (!isPlaying || displayedIndex < 0 || !currentSeq.length) {
+    statusEl.innerHTML = `検出中: <span class="note">${detectedName}</span> (${Math.round(freq)}Hz)`;
+    return;
+  }
+
+  const expected = currentSeq[displayedIndex % currentSeq.length];
+  const expectedMidi = STRING_OPEN_MIDI[expected.string] + expected.fret;
+  const cents = pitchClassCentsDiff(detectedMidi, expectedMidi);
+  const isWrong = Math.abs(cents) > CENTS_TOLERANCE;
+
+  statusEl.innerHTML = `検出中: <span class="${isWrong ? 'off-pitch' : 'note'}">${detectedName}</span>` +
+    ` / 期待値: ${midiName(expectedMidi)} (${cents >= 0 ? '+' : ''}${Math.round(cents)}セント)`;
+
+  document.querySelectorAll('.beat-col.current').forEach(el => el.classList.toggle('judged-wrong', isWrong));
+  const nf = document.getElementById('nowFret');
+  if (nf) nf.classList.toggle('wrong', isWrong);
+}
+micLoop();
+
+// 練習中に画面が消えないようにする（スマホで一番効く）
+let wakeLock = null;
+async function requestWakeLock() {
+  try {
+    if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
+  } catch (e) { /* 非対応環境では黙って諦める */ }
+}
+function releaseWakeLock() {
+  if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && isPlaying) requestWakeLock();
+});
+
+setSequence(generatePattern(PRESETS[4].string, PRESETS[4].fret, PRESETS[4].shape, PRESETS[4].n, PRESETS[4].num, PRESETS[4].dir));
+</script>
+</body>
+</html>
