@@ -310,6 +310,28 @@
   .chord-why { font-size: 12px; color: var(--text-dim); line-height: 1.7; margin-top: 6px; }
   .chord-why b { color: var(--text); font-weight: 600; }
   .chord-none { font-size: 12.5px; color: var(--text-dim); line-height: 1.7; margin-top: 10px; }
+
+  .voicing-card {
+    background: var(--panel2); border-radius: 8px; padding: 12px 14px; margin-top: 10px;
+    border-left: 3px solid var(--accent-dim);
+  }
+  .voicing-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .voicing-pos { font-size: 15px; font-weight: 700; color: var(--accent); }
+  .voicing-tag {
+    font-size: 11px; color: var(--text-dim); background: var(--panel);
+    border: 1px solid var(--border); border-radius: 10px; padding: 2px 9px;
+  }
+  .voicing-diagram { display: flex; gap: 8px; margin-top: 10px; }
+  .voicing-string { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 32px; }
+  .voicing-string .vs-open-name { font-size: 10px; color: var(--text-dim); }
+  .vs-mark {
+    width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; font-size: 11px; font-weight: 700; box-sizing: border-box;
+  }
+  .vs-mark.open { border: 1.5px solid var(--accent-dim); color: var(--accent-dim); background: transparent; }
+  .vs-mark.mute { color: var(--text-dim); background: transparent; }
+  .vs-mark.fretted { background: var(--accent); color: var(--on-accent); }
+  .voicing-why { font-size: 12px; color: var(--text-dim); line-height: 1.7; margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -400,7 +422,7 @@
   <div class="panel" id="chordPanel">
     <h2>Your Voicing</h2>
     <p class="habit-lead">
-      いま押さえている形を指板に打ち込むと、<strong>そう読めるコードを全部</strong>、理由つきで出します。
+      いま押さえている形を指板に打ち込むと、<strong>そう読める和音を全部</strong>、理由つきで出します。
       どれを採るかは決めません。決めるのはあなたです。
     </p>
     <div class="row" style="margin-bottom:10px;">
@@ -412,6 +434,26 @@
     </div>
     <div id="fretboard"></div>
     <div id="chordResult"></div>
+  </div>
+
+  <div class="panel" id="voicingPanel">
+    <h2>Find a Voicing</h2>
+    <p class="habit-lead">
+      鳴らしたい和音を選ぶと、その和音を鳴らせる押さえ方を、ネックの低い位置から順に出します。
+      全弦をセーハする形と、開放弦を残したまま鳴らせる形の両方を出します。どれを使うかは選びません。<br>
+      指の本数（4本）と届く範囲だけで機械的に絞り込んでいるため、実際に押さえやすいかどうかは、
+      ご自身の手で確認してください。
+    </p>
+    <div class="row" style="margin-bottom:10px;">
+      <div class="field"><label>ルート音</label>
+        <select id="vRootSel"></select>
+      </div>
+      <div class="field"><label>種類</label>
+        <select id="vTypeSel"></select>
+      </div>
+      <button id="vFindBtn" class="primary" style="align-self:flex-end;">探す</button>
+    </div>
+    <div id="voicingResult"></div>
   </div>
 
   <div class="panel" id="habitPanel">
@@ -1211,13 +1253,13 @@ updateHabitCount();
 renderHabit();
 
 /* ══════════════════════════════════════════════════════════════
-   このコードなに?
+   この和音なに?
 
    設計（2026-07-27 Rさん確定）：
    ・すべてプログラムによる確定計算のみ。AIに推測させる部分をゼロにする
-   ・出すのは「そう読めるコード候補の一覧＋なぜそう読めるかの理由」まで
+   ・出すのは「そう読める和音候補の一覧＋なぜそう読めるかの理由」まで
    ・どれを採るかはユーザーが決める。アプリは決めない
-   ・カポ対応は中核機能（カポ3のCコード＝実音E♭問題が原点）
+   ・カポ対応は中核機能（カポ3のC和音＝実音E♭問題が原点）
    ══════════════════════════════════════════════════════════════ */
 
 const FB_FRETS = 15;
@@ -1343,7 +1385,7 @@ function renderChord() {
     const enh = Object.keys(FLATS).filter(s => r.name.startsWith(s));
     if (enh.length) notesList.push(`${enh[0]} は ${FLATS[enh[0]]} と同じ音です`);
     if (r.missing) notesList.push(`${r.missing}が省略されています（ギターでは普通のことです）`);
-    if (r.inversion) notesList.push(`一番低い音が ${r.bass} なので転回形（分数コード）として書いています`);
+    if (r.inversion) notesList.push(`一番低い音が ${r.bass} なので転回形（分数和音）として書いています`);
     return `<div class="chord-card ${r.exact ? 'exact' : ''}">` +
       `<div class="chord-name">${r.name}${r.exact ? '<span class="sub">ぴったり一致</span>' : ''}</div>` +
       `<div class="chord-why"><b>${r.degText}</b>${notesList.length ? '<br>' + notesList.join('。') + '。' : ''}</div>` +
@@ -1376,6 +1418,184 @@ capoSel.addEventListener('change', () => { capo = +capoSel.value; renderChord();
 
 renderFretboard();
 renderChord();
+
+/* ══════════════════════════════════════════════════════════════
+   和音の押さえ方を探す（Find a Voicing）
+
+   設計：
+   ・「この和音なに?」と同じ、確定計算だけで押さえ方を総当たりで求める。AIに推測させない
+   ・全弦セーハの形だけでなく、開放弦を残す形も同列に出す。どちらを使うかは選ばない
+   ══════════════════════════════════════════════════════════════ */
+
+const VOICING_MAX_FRET = 12;
+const VOICING_MAX_SPAN = 4;
+const OPEN_STRING_NAMES = { 1: 'E', 2: 'B', 3: 'G', 4: 'D', 5: 'A', 6: 'E' };
+
+// 何本の指が要るかを見積もる。同じフレットが連続する弦はセーハで1本にまとめられるが、
+// 開放弦・ミュートした弦・別のフレットの弦を挟むとセーハがそこで途切れる
+function fingersNeeded(frets) {
+  const order = [6, 5, 4, 3, 2, 1].map(s => frets[s - 1]); // 低音弦→高音弦の物理的な並び
+  const fretted = order.map((f, i) => ({ i, f })).filter(x => x.f !== null && x.f > 0);
+  if (fretted.length === 0) return 0;
+  const minFret = Math.min(...fretted.map(x => x.f));
+
+  let best = { lo: -1, hi: -1, span: 0 };
+  for (const start of fretted.filter(x => x.f === minFret).map(x => x.i)) {
+    let lo = start, hi = start;
+    while (lo - 1 >= 0 && order[lo - 1] !== null && order[lo - 1] >= minFret) lo--;
+    while (hi + 1 <= 5 && order[hi + 1] !== null && order[hi + 1] >= minFret) hi++;
+    if (hi - lo + 1 > best.span) best = { lo, hi, span: hi - lo + 1 };
+  }
+
+  let fingers = 0;
+  const covered = new Set();
+  if (best.span >= 2) {
+    fingers += 1; // セーハ
+    for (let i = best.lo; i <= best.hi; i++) {
+      covered.add(i);
+      if (order[i] > minFret) fingers += 1; // セーハの上から別の指で押さえ直す
+    }
+  }
+  for (const x of fretted) if (!covered.has(x.i)) fingers += 1;
+  return fingers;
+}
+
+function findVoicings(root, chordType) {
+  const need = chordType.iv.map(v => (root + v) % 12);
+  const needSet = new Set(need);
+  const fifthPc = (root + 7) % 12;
+
+  const perString = [];
+  for (let s = 1; s <= 6; s++) {
+    const opts = [null]; // ミュート
+    for (let f = 0; f <= VOICING_MAX_FRET; f++) {
+      const pc = ((STRING_OPEN_MIDI[s] + f) % 12 + 12) % 12;
+      if (needSet.has(pc)) opts.push(f);
+    }
+    perString.push(opts);
+  }
+
+  const results = [];
+  for (const f1 of perString[0]) for (const f2 of perString[1]) for (const f3 of perString[2])
+  for (const f4 of perString[3]) for (const f5 of perString[4]) for (const f6 of perString[5]) {
+    const frets = [f1, f2, f3, f4, f5, f6];
+    const sounding = [];
+    for (let i = 0; i < 6; i++) {
+      if (frets[i] === null) continue;
+      const s = i + 1;
+      const midi = STRING_OPEN_MIDI[s] + frets[i];
+      sounding.push({ string: s, fret: frets[i], pc: ((midi % 12) + 12) % 12, midi });
+    }
+    if (sounding.length < 3) continue;
+
+    const pcs = new Set(sounding.map(n => n.pc));
+    const missing = need.filter(pc => !pcs.has(pc));
+    if (missing.length > 1) continue;
+    if (missing.length === 1 && missing[0] !== fifthPc) continue;
+    if (need.length - missing.length < 2) continue;   // 残る音が1つだけなら和音として意味がない
+
+    const frettedFrets = sounding.filter(n => n.fret > 0).map(n => n.fret);
+    const span = frettedFrets.length ? Math.max(...frettedFrets) - Math.min(...frettedFrets) : 0;
+    if (span > VOICING_MAX_SPAN) continue;             // 指が届く範囲
+    if (fingersNeeded(frets) > 4) continue;             // 指は4本しかない
+    const basePos = frettedFrets.length ? Math.min(...frettedFrets) : 0;
+
+    sounding.sort((a, b) => a.midi - b.midi);
+    const bassPc = sounding[0].pc;
+
+    results.push({
+      frets,
+      basePos,
+      span,
+      soundingCount: sounding.length,
+      openCount: sounding.filter(n => n.fret === 0).length,
+      inversion: bassPc !== root,
+      missing5th: missing.length === 1,
+    });
+  }
+  return results;
+}
+
+function cmpVoicing(a, b) {
+  if (a.missing5th !== b.missing5th) return a.missing5th ? 1 : -1;
+  if (a.inversion !== b.inversion) return a.inversion ? 1 : -1;
+  if (b.soundingCount !== a.soundingCount) return b.soundingCount - a.soundingCount;
+  return a.span - b.span;
+}
+
+function voicingKey(v) { return v.frets.map(f => f === null ? 'x' : f).join(','); }
+
+// 位置（basePos）ごとに、いちばん自然な形と、開放弦が残る形の最大2通りだけを残す
+function pickVoicings(results) {
+  const byPos = new Map();
+  for (const r of results) {
+    if (!byPos.has(r.basePos)) byPos.set(r.basePos, []);
+    byPos.get(r.basePos).push(r);
+  }
+  const picked = [];
+  for (const pos of [...byPos.keys()].sort((a, b) => a - b)) {
+    const group = byPos.get(pos).slice().sort(cmpVoicing);
+    const best = group[0];
+    picked.push(best);
+    const openAlt = group.find(g => g.openCount > 0 && voicingKey(g) !== voicingKey(best));
+    if (openAlt) picked.push(openAlt);
+  }
+  return picked;
+}
+
+function renderVoicingCard(v) {
+  const strings = [6, 5, 4, 3, 2, 1].map(s => {
+    const f = v.frets[s - 1];
+    let mark;
+    if (f === null) mark = `<div class="vs-mark mute">✕</div>`;
+    else if (f === 0) mark = `<div class="vs-mark open">○</div>`;
+    else mark = `<div class="vs-mark fretted">${f}</div>`;
+    return `<div class="voicing-string"><div class="vs-open-name">${OPEN_STRING_NAMES[s]}</div>${mark}</div>`;
+  }).join('');
+
+  const tags = [];
+  if (v.soundingCount === 6 && v.openCount === 0) tags.push('全弦セーハ');
+  else if (v.openCount > 0) tags.push('開放弦を使用');
+  else tags.push('一部ミュート');
+  if (v.inversion) tags.push('転回形（分数和音）');
+  if (v.missing5th) tags.push('5度を省略');
+
+  const posLabel = v.basePos === 0 ? '開放位置' : `${v.basePos}フレット付近`;
+
+  return `<div class="voicing-card">` +
+    `<div class="voicing-head"><span class="voicing-pos">${posLabel}</span>` +
+    tags.map(t => `<span class="voicing-tag">${t}</span>`).join('') +
+    `</div>` +
+    `<div class="voicing-diagram">${strings}</div>` +
+    `</div>`;
+}
+
+function renderVoicings() {
+  const root = +vRootSel.value;
+  const t = CHORD_TYPES[+vTypeSel.value];
+  const name = NOTE_NAMES[root] + t.n;
+  const box = document.getElementById('voicingResult');
+
+  const picked = pickVoicings(findVoicings(root, t));
+
+  if (!picked.length) {
+    box.innerHTML = `<div class="chord-none">${name} を、指の届く範囲（4フレット以内）で押さえられる形が見つかりませんでした。</div>`;
+    return;
+  }
+  box.innerHTML = `<div class="chord-none">${name} の押さえ方 ${picked.length}通り。ネックの低い位置から順に並んでいます。</div>` +
+    picked.map(renderVoicingCard).join('');
+}
+
+const vRootSel = document.getElementById('vRootSel');
+vRootSel.innerHTML = NOTE_NAMES.map((n, i) => `<option value="${i}">${n}</option>`).join('');
+vRootSel.value = 7; // G
+
+const vTypeSel = document.getElementById('vTypeSel');
+vTypeSel.innerHTML = CHORD_TYPES.map((t, i) => `<option value="${i}">${t.n === '' ? 'メジャー' : t.n}</option>`).join('');
+vTypeSel.value = 2; // メジャー
+
+document.getElementById('vFindBtn').addEventListener('click', renderVoicings);
+renderVoicings();
 
 setSequence(generatePattern(PRESETS[4].string, PRESETS[4].fret, PRESETS[4].shape, PRESETS[4].n, PRESETS[4].num, PRESETS[4].dir));
 </script>
