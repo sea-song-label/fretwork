@@ -1460,10 +1460,16 @@ function fingersNeeded(frets) {
   return fingers;
 }
 
-function findVoicings(root, chordType) {
-  const need = chordType.iv.map(v => (root + v) % 12);
-  const needSet = new Set(need);
+// opts（どれも省略可）：
+//   omittable … 鳴っていなくてよい音の集合（既定＝5度だけ）。5音以上の和音では根音も省いてよい（ギターでよく使う形）
+//   bass      … 分数和音の低い音。指定があれば、いちばん低い音がこの音の形だけを出す
+function findVoicings(root, chordType, opts = {}) {
+  const need = [...new Set(chordType.iv.map(v => (root + v) % 12))];
   const fifthPc = (root + 7) % 12;
+  const omittable = opts.omittable || new Set([fifthPc]);
+  const maxMissing = opts.maxMissing || 1;
+  const slashBass = (opts.bass != null && opts.bass !== root) ? opts.bass : null;
+  const needSet = new Set(slashBass != null ? need.concat([slashBass]) : need);
 
   const perString = [];
   for (let s = 1; s <= 6; s++) {
@@ -1490,9 +1496,13 @@ function findVoicings(root, chordType) {
 
     const pcs = new Set(sounding.map(n => n.pc));
     const missing = need.filter(pc => !pcs.has(pc));
-    if (missing.length > 1) continue;
-    if (missing.length === 1 && missing[0] !== fifthPc) continue;
+    if (missing.length > maxMissing) continue;
+    if (missing.some(pc => !omittable.has(pc))) continue;
     if (need.length - missing.length < 2) continue;   // 残る音が1つだけなら和音として意味がない
+    if (slashBass != null) {                            // 分数和音：いちばん低い音が指定の音
+      const low = sounding.reduce((a, b) => (b.midi < a.midi ? b : a));
+      if (low.pc !== slashBass) continue;
+    }
 
     const frettedFrets = sounding.filter(n => n.fret > 0).map(n => n.fret);
     const span = frettedFrets.length ? Math.max(...frettedFrets) - Math.min(...frettedFrets) : 0;
@@ -1509,14 +1519,17 @@ function findVoicings(root, chordType) {
       span,
       soundingCount: sounding.length,
       openCount: sounding.filter(n => n.fret === 0).length,
-      inversion: bassPc !== root,
-      missing5th: missing.length === 1,
+      inversion: slashBass == null && bassPc !== root,
+      missing5th: missing.includes(fifthPc),
+      missingRoot: missing.includes(root),
+      missingCount: missing.length,
     });
   }
   return results;
 }
 
 function cmpVoicing(a, b) {
+  if ((a.missingCount || 0) !== (b.missingCount || 0)) return (a.missingCount || 0) - (b.missingCount || 0);
   if (a.missing5th !== b.missing5th) return a.missing5th ? 1 : -1;
   if (a.inversion !== b.inversion) return a.inversion ? 1 : -1;
   if (b.soundingCount !== a.soundingCount) return b.soundingCount - a.soundingCount;
@@ -1559,6 +1572,7 @@ function renderVoicingCard(v) {
   else tags.push('一部ミュート');
   if (v.inversion) tags.push('転回形（分数和音）');
   if (v.missing5th) tags.push('5度を省略');
+  if (v.missingRoot) tags.push('根音を省略');
 
   const posLabel = v.basePos === 0 ? '開放位置' : `${v.basePos}フレット付近`;
 
@@ -1573,10 +1587,18 @@ function renderVoicingCard(v) {
 function renderVoicings() {
   const root = +vRootSel.value;
   const t = CHORD_TYPES[+vTypeSel.value];
-  const name = NOTE_NAMES[root] + t.n;
+  showVoicings(root, t, NOTE_NAMES[root] + t.n, {});
+}
+
+function escHtml(str) {
+  return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function showVoicings(root, t, rawName, opts) {
+  const name = escHtml(rawName);
   const box = document.getElementById('voicingResult');
 
-  const picked = pickVoicings(findVoicings(root, t));
+  const picked = pickVoicings(findVoicings(root, t, opts));
 
   if (!picked.length) {
     box.innerHTML = `<div class="chord-none">${name} を、指の届く範囲（4フレット以内）で押さえられる形が見つかりませんでした。</div>`;
@@ -1596,6 +1618,37 @@ vTypeSel.value = 2; // メジャー
 
 document.getElementById('vFindBtn').addEventListener('click', renderVoicings);
 renderVoicings();
+
+// 外から和音を渡して開く（pet sounds の五線譜を押したとき）
+//   ?root=根音(0〜11)&iv=根音からの音程(カンマ区切り)&bass=低い音(0〜11)&name=和音名 #voicingPanel
+//   値は数字だけを受け取り、和音名は文字として表示するだけ（HTMLとしては扱わない）
+(function openFromLink() {
+  const q = new URLSearchParams(location.search);
+  if (!q.has('root') || !q.has('iv')) return;
+  const toPc = v => { const n = parseInt(v, 10); return Number.isInteger(n) && n >= 0 && n <= 11 ? n : null; };
+  const root = toPc(q.get('root'));
+  const iv = [...new Set(String(q.get('iv')).split(',').slice(0, 8)
+    .map(v => parseInt(v, 10)).filter(n => Number.isInteger(n) && n >= 0 && n <= 23).map(n => n % 12))];
+  if (root === null || !iv.length) return;
+  if (!iv.includes(0)) iv.unshift(0);
+  const bass = q.has('bass') ? toPc(q.get('bass')) : null;
+  const name = (q.get('name') || '').slice(0, 40) || NOTE_NAMES[root];
+  const fifthPc = (root + 7) % 12;
+  // 5音以上の和音は指4本では全部押さえられないことが多いので、ギターでよくやるように5度と根音を省いてよいことにする
+  const big = iv.length >= 5;
+  const opts = {
+    omittable: big ? new Set([fifthPc, root]) : new Set([fifthPc]),
+    maxMissing: big ? 2 : 1,
+    bass: bass,
+  };
+  const panel = document.getElementById('voicingPanel');
+  const note = document.createElement('div');
+  note.className = 'chord-none';
+  note.textContent = 'pet sounds から届いた和音：' + name + (big ? '（5音以上の和音なので、5度や根音を省いた形も出しています）' : '');
+  document.getElementById('voicingResult').before(note);
+  showVoicings(root, { n: '', iv: iv }, name, opts);
+  panel.scrollIntoView({ block: 'start' });
+})();
 
 setSequence(generatePattern(PRESETS[4].string, PRESETS[4].fret, PRESETS[4].shape, PRESETS[4].n, PRESETS[4].num, PRESETS[4].dir));
 </script>
