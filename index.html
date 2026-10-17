@@ -429,6 +429,13 @@
       <div class="field"><label>カポ</label>
         <select id="capoSel"></select>
       </div>
+      <div class="field"><label>音色</label>
+        <select id="voiceSel">
+          <option value="guitar">クリーンのエレキギター</option>
+          <option value="rhodes">ローズ</option>
+        </select>
+      </div>
+      <button id="chordPlayBtn" class="primary" style="align-self:flex-end;">▶ 鳴らす</button>
       <button id="chordClearBtn" style="align-self:flex-end;">全部はずす</button>
       <span id="chordNotes" class="habit-count"></span>
     </div>
@@ -1410,6 +1417,124 @@ document.getElementById('chordClearBtn').addEventListener('click', () => {
   fbState = [null, null, null, null, null, null];
   renderFretboard(); renderChord();
 });
+
+// ── Your Voicing：押さえた音を鳴らす（クリーンのエレキギター／ローズ）──
+// 音の素材は読み込まず、その場で作る（ネットが無くても鳴る）。
+// ギター＝弦をはじいた音の作り方（Karplus-Strong）、ローズ＝FM合成（電気ピアノの定番の作り方）
+let voiceBus = null;
+function getVoiceBus() {
+  ensureAudio();
+  if (!voiceBus) {
+    const comp = audioCtx.createDynamicsCompressor();
+    comp.threshold.value = -18; comp.ratio.value = 3;
+    const out = audioCtx.createGain();
+    out.gain.value = 0.9;
+    comp.connect(out).connect(audioCtx.destination);
+    voiceBus = comp;
+  }
+  return voiceBus;
+}
+
+function midiFreq(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+
+function pluckGuitar(time, midi, level) {
+  const sr = audioCtx.sampleRate;
+  const freq = midiFreq(midi);
+  const N = Math.max(2, Math.floor(sr / freq));
+  const dur = 3.2;
+  const buf = audioCtx.createBuffer(1, Math.floor(sr * dur), sr);
+  const d = buf.getChannelData(0);
+  // はじいた瞬間の音：少し丸めた雑音。指板の端から1割強の位置ではじいた形にする
+  const ring = new Float32Array(N);
+  let prev = 0;
+  for (let i = 0; i < N; i++) { prev = prev * 0.45 + (Math.random() * 2 - 1) * 0.55; ring[i] = prev; }
+  const pick = Math.max(1, Math.round(N * 0.13));
+  const shaped = new Float32Array(N);
+  for (let i = 0; i < N; i++) shaped[i] = ring[i] - ring[(i + pick) % N];
+  ring.set(shaped);
+  // 余韻：基音が約6秒で十分小さくなる減り方（倍音は先に消える）
+  const rho = Math.pow(0.001, 1 / (freq * 6));
+  for (let i = 0, idx = 0; i < d.length; i++) {
+    const next = idx + 1 === N ? 0 : idx + 1;
+    d[i] = ring[idx];
+    ring[idx] = rho * 0.5 * (ring[idx] + ring[next]);
+    idx = next;
+  }
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  src.playbackRate.value = freq * (N - 0.5) / sr;   // 1周の長さは実際には N−0.5（隣と平均を取るため）。測って確かめた
+  const hp = audioCtx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 75;
+  const lp = audioCtx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 4200; lp.Q.value = 0.6;
+  const body = audioCtx.createBiquadFilter(); body.type = 'peaking'; body.frequency.value = 1800; body.gain.value = 3; body.Q.value = 0.8;
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(level * 1.6, time);
+  g.gain.setTargetAtTime(0, time + dur - 0.4, 0.12);
+  src.connect(hp).connect(lp).connect(body).connect(g).connect(getVoiceBus());
+  src.start(time);
+  src.stop(time + dur);
+}
+
+function strikeRhodes(time, midi, level) {
+  const f = midiFreq(midi);
+  const len = Math.max(1.6, 4.2 - (midi - 40) * 0.05);   // 高い音ほど短く消える
+  const out = audioCtx.createGain();
+  out.gain.setValueAtTime(0.0001, time);
+  out.gain.exponentialRampToValueAtTime(level, time + 0.004);
+  out.gain.exponentialRampToValueAtTime(level * 0.35, time + 0.6);
+  out.gain.exponentialRampToValueAtTime(0.0001, time + len);
+  // 本体の音：1:1の変調で、叩いた瞬間は明るく、すぐ丸くなる
+  const car = audioCtx.createOscillator(); car.frequency.value = f;
+  const mod = audioCtx.createOscillator(); mod.frequency.value = f;
+  const modG = audioCtx.createGain();
+  modG.gain.setValueAtTime(f * 1.6, time);
+  modG.gain.exponentialRampToValueAtTime(f * 0.25, time + 1.0);
+  mod.connect(modG).connect(car.frequency);
+  // 金属の棒の「チーン」：14倍の変調で一瞬だけ
+  const bell = audioCtx.createOscillator(); bell.frequency.value = f;
+  const bmod = audioCtx.createOscillator(); bmod.frequency.value = f * 14;
+  const bmodG = audioCtx.createGain();
+  bmodG.gain.setValueAtTime(f * 3, time);
+  bmodG.gain.exponentialRampToValueAtTime(1, time + 0.18);
+  bmod.connect(bmodG).connect(bell.frequency);
+  const bellG = audioCtx.createGain();
+  bellG.gain.setValueAtTime(0.18, time);
+  bellG.gain.exponentialRampToValueAtTime(0.0001, time + 0.35);
+  // 揺れ（スーツケース型のトレモロを弱く）
+  const trem = audioCtx.createOscillator(); trem.frequency.value = 4.6;
+  const tremG = audioCtx.createGain(); tremG.gain.value = 0.07;
+  const tremAmp = audioCtx.createGain(); tremAmp.gain.value = 0.93;
+  trem.connect(tremG).connect(tremAmp.gain);
+  const lp = audioCtx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5000;
+  car.connect(out);
+  bell.connect(bellG).connect(out);
+  out.connect(tremAmp).connect(lp).connect(getVoiceBus());
+  const end = time + len + 0.05;
+  [car, mod, bell, bmod, trem].forEach(o => { o.start(time); o.stop(end); });
+}
+
+function playVoicing() {
+  const notes = fbSounding();
+  if (!notes.length) return;
+  ensureAudio();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const voice = document.getElementById('voiceSel').value;
+  const t0 = audioCtx.currentTime + 0.03;
+  const level = 0.5 / Math.sqrt(notes.length);
+  notes.forEach((n, k) => {   // 低い音から順に（ギターはジャランと、ローズはほぼ同時に）
+    if (voice === 'rhodes') strikeRhodes(t0 + k * 0.006, n.midi, level);
+    else pluckGuitar(t0 + k * 0.028, n.midi, level);
+  });
+}
+
+document.getElementById('chordPlayBtn').addEventListener('click', playVoicing);
+(() => {
+  const sel = document.getElementById('voiceSel');
+  try { const v = localStorage.getItem('fretwork.voice'); if (v === 'guitar' || v === 'rhodes') sel.value = v; } catch (e) {}
+  sel.addEventListener('change', () => {
+    try { localStorage.setItem('fretwork.voice', sel.value); } catch (e) {}
+    playVoicing();
+  });
+})();
 
 const capoSel = document.getElementById('capoSel');
 capoSel.innerHTML = Array.from({ length: 8 }, (_, i) =>
